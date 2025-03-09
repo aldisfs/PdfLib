@@ -8,7 +8,7 @@ namespace PdfLib
     /// <summary>
     /// PDF 파일을 읽어 텍스트를 테이블 형태로 변환하는 클래스입니다.
     /// </summary>
-    public class PdfManager
+    internal class PdfManager
     {
         /// <summary>
         /// PDF 파일에서 텍스트를 읽어 표 형식으로 변환합니다.

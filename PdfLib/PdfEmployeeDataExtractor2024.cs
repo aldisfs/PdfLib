@@ -8,7 +8,7 @@ namespace PdfLib
     /// <summary>
     /// 2024년 기준 원천징수영수증에서 직원 데이터를 추출하는 클래스입니다.
     /// </summary>
-    public class PdfEmployeeDataExtractor2024 : IPdfEmployeeDataExtractor
+    internal class PdfEmployeeDataExtractor2024 : IPdfEmployeeDataExtractor
     {
         /// <summary>
         /// 지정된 PDF 파일에서 직원 데이터를 추출합니다.
