@@ -3,7 +3,7 @@
     /// <summary>
     /// 원천징수영수증 PDF 파일에서 직원 데이터를 추출하는 기능을 제공하는 인터페이스입니다.
     /// </summary>
-    internal interface IPdfEmployeeDataExtractor
+    public interface IPdfEmployeeDataExtractor
     {
         /// <summary>
         /// 원천징수영수증 PDF 파일에서 직원 데이터를 추출합니다.

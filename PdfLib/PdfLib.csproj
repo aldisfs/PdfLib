@@ -79,6 +79,10 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="PdfEmployeeDataExtractorFactory.cs" />
+    <Compile Include="PdfEmployeeDataExtractor2024.cs" />
+    <Compile Include="IPdfEmployeeDataExtractor.cs" />
+    <Compile Include="PdfEmployeeData.cs" />
     <Compile Include="PdfManger.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
