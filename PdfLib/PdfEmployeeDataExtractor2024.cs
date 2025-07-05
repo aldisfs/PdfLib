@@ -1,15 +1,26 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text.RegularExpressions;
 
 namespace PdfLib
 {
+    public enum PdfSource
+    {
+        None = 0,
+        HOMETAX = 1,
+        SEMUSARANG = 2,
+        DOUZONE = 3,
+        UNKNOWN = 9
+    }
+
     /// <summary>
     /// 2024년 기준 원천징수영수증에서 직원 데이터를 추출하는 클래스입니다.
     /// </summary>
     internal class PdfEmployeeDataExtractor2024 : IPdfEmployeeDataExtractor
     {
+
         /// <summary>
         /// 지정된 PDF 파일에서 직원 데이터를 추출합니다.
         /// </summary>
@@ -19,10 +30,8 @@ namespace PdfLib
         /// <exception cref="Exception">
         /// 잘못된 파일이거나, 직원 정보(이름, 주민등록번호 등)가 가려지거나, 기준년도가 작년이 아닌 경우 예외가 발생합니다.
         /// </exception>
-        public PdfEmployeeData ExtractPdfEmployeeData(string filePath, bool isDebug = false)
+        public PdfEmployeeData ExtractPdfEmployeeData(List<List<string>> firstTableData, List<List<string>> secondTableData, PdfSource pdfSource = PdfSource.UNKNOWN, bool isDebug = false)
         {
-            List<List<string>> firstTableData = PdfManager.ImportPdfToTable(filePath, 1);
-
             firstTableData = firstTableData
                .Select(row => row.Select(cell => Regex.Replace(cell, @"\s+", "")).ToList())
                .ToList();
@@ -31,41 +40,94 @@ namespace PdfLib
             {
                 foreach (var row in firstTableData)
                 {
-                    Console.WriteLine(string.Join("|", row));
+                    Debug.WriteLine(string.Join("|", row));
                 }
             }
 
-            string name = firstTableData
-                  .FirstOrDefault(row => row.Any(cell => cell.Contains("⑥") && row.Any(c => c.Contains("⑦"))))?
-                  .SkipWhile(cell => !cell.Contains("⑥"))
-                  .Skip(2)
-                  .FirstOrDefault() ?? "";
+            string name = "";
+            string uidnum7 = "";
+            int baseYear = 0;
 
-            string uid = firstTableData
-                .FirstOrDefault(row => row.Any(cell => cell.Contains("⑥") && row.Any(c => c.Contains("⑦"))))?
-                .Last()
-                .Substring(0, 8)
-                .Replace("-", "") ?? "";
+            var userInfoRow = firstTableData
+                .FirstOrDefault(r => r.Any(cell => cell.Contains("⑥")) && r.Any(cell => cell.Contains("⑦")));
+
+
+            //상황에 따라 cell이 다를 수 있으므로 row문자열을 모두 합친 후 문자열로 처리를 한다 (필수 데이터만 이런 처리를 함)
+            if (userInfoRow != null)
+            {
+                int startIndex = userInfoRow.FindIndex(cell => cell.Contains("⑥"));
+                int endIndex = userInfoRow.FindIndex(cell => cell.Contains("⑦"));
+
+                //성명
+                if (startIndex >= 0 && endIndex > startIndex)
+                {
+                    // ⑥ 포함 셀부터 ⑦ 포함 셀 이전까지
+                    var cellsToJoin = userInfoRow.Skip(startIndex).Take(endIndex - startIndex);
+                    string concated = string.Concat(cellsToJoin);
+                    string keyword = "⑥성명";
+                    int idx = concated.IndexOf(keyword);
+                    if (idx >= 0)
+                    {
+                        // "성명"의 끝 위치부터 끝까지 가져오기
+                        name = concated.Substring(idx + keyword.Length).Trim();
+                    }
+                }
+
+                //주민번호
+                if (endIndex >= 0)
+                {
+                    string concated = string.Concat(userInfoRow.Skip(endIndex));
+                    concated = Regex.Replace(concated, @"\D", "");
+                    if (concated != null && concated.Length > 13)
+                    {
+                        concated = concated.Substring(concated.Length - 13);
+                    }
+                    if (concated != null && concated.Length >= 7)
+                    {
+                        uidnum7 = concated.Substring(0, 7);
+                    }
+                }
+
+            }
 
             if (!isDebug)
             {
-                if (name.Length == 0 || uid.Length == 0)
+                if (name.Length == 0 || uidnum7.Length == 0)
                 {
                     throw new Exception("잘못된 파일입니다.");
                 }
 
-                if (name.Contains("*") || uid.Contains("*"))
+                if (name.Contains("*") || uidnum7.Contains("*"))
                 {
                     throw new Exception("이름이나 주민번호가 가려져 직원 정보를 알 수 없습니다.");
                 }
             }
 
-            int baseYear = firstTableData
-                .FirstOrDefault(row => row.Any(cell => cell.Contains("근무기간")))?
-                .SkipWhile(cell => !cell.Contains("근무기간"))
-                .Skip(1)
-                .Select(cell => int.TryParse(cell.Trim().Substring(0, 4), out int value) ? value : 0)
-                .FirstOrDefault() ?? 0;
+            // 기준년도
+            var baseYearInfoRow = firstTableData
+                .FirstOrDefault(row => row.Any(cell => cell.Contains("근무기간")));
+
+            if (baseYearInfoRow != null)
+            {
+                string concated = string.Concat(baseYearInfoRow);
+
+                string keyword = "근무기간";
+
+                int idx = concated.IndexOf(keyword);
+                if (idx >= 0)
+                {
+                    concated = concated.Substring(idx + keyword.Length).Trim();
+                    concated = Regex.Replace(concated, @"\D", "");
+                    if (concated.Length >= 4)
+                    {
+                        string baseYearStr = concated.Substring(0, 4);
+                        if (!int.TryParse(baseYearStr, out baseYear))
+                        {
+                            baseYear = 0;
+                        }
+                    }
+                }
+            }
 
             if (!isDebug)
             {
@@ -87,6 +149,7 @@ namespace PdfLib
                .Select(cell => decimal.TryParse(cell.Trim(), out decimal value) ? value : 0)
                .FirstOrDefault() ?? 0;
 
+            //1page 상단의 내역 중 비과세소득과 같은 경우 종(전)에만 값이 있고 주(현)에는 값이 없을 수 있음
             decimal untaxedTotalSum = firstTableData
                 .FirstOrDefault(row => row.Any(cell => cell.Contains("비과세소득")))?
                 .SkipWhile(cell => !cell.Contains("비과세소득"))
@@ -94,35 +157,40 @@ namespace PdfLib
                 .Select(cell => decimal.TryParse(cell.Trim(), out decimal value) ? value : 0)
                 .FirstOrDefault() ?? 0;
 
+            //1page 아래 내용은 항목은 컬럼으로 주/종을 가리지 않으므로 빈값은 모두 skip
             decimal previousTaxPaid = firstTableData
                .FirstOrDefault(row => row.Any(cell => cell.Contains("주(현)근무지")))?
                .SkipWhile(cell => !cell.Contains("주(현)근무지"))
                .Skip(1)
+               .SkipWhile(cell => string.IsNullOrWhiteSpace(cell))
                .Take(3)
                .Select(cell => decimal.TryParse(cell.Trim(), out decimal value) ? value : 0)
                .Sum() ?? 0;
 
+            //징수세액
             int deductibleTax = firstTableData
                .FirstOrDefault(row => row.Any(cell => cell.Contains("징수세액")))?
                .SkipWhile(cell => !cell.Contains("징수세액"))
                .Skip(1)
+               .SkipWhile(cell => string.IsNullOrWhiteSpace(cell))
                .Take(3)
                .Select(cell => int.TryParse(cell.Trim().Replace(",", ""), out int value) ? value : 0)
                .Sum() ?? 0;
 
             if (isDebug)
             {
-                Console.WriteLine("------------");
-                Console.WriteLine($"name: {name}");
-                Console.WriteLine($"uid: {uid}");
-                Console.WriteLine($"baseYear: {baseYear}");
-                Console.WriteLine($"totalSum: {totalSum}");
-                Console.WriteLine($"untaxedTotalSum: {untaxedTotalSum}");
-                Console.WriteLine($"previousTaxPaid: {previousTaxPaid}");
-                Console.WriteLine($"deductibleTax: {deductibleTax}");
+                Debug.WriteLine("------------");
+                Debug.WriteLine($"name: {name}");
+                Debug.WriteLine($"uidnum7: {uidnum7}");
+                Debug.WriteLine($"baseYear: {baseYear}");
+                Debug.WriteLine($"totalSum: {totalSum}");
+                Debug.WriteLine($"untaxedTotalSum: {untaxedTotalSum}");
+                Debug.WriteLine($"previousTaxPaid: {previousTaxPaid}");
+                Debug.WriteLine($"deductibleTax: {deductibleTax}");
             }
 
-            List<List<string>> secondTableData = PdfManager.ImportPdfToTable(filePath, 2, 3, 25);
+
+            //두번째 페이지
 
             secondTableData = secondTableData
                .Select(row => row.Select(cell => Regex.Replace(cell, @"\s+", "")).ToList())
@@ -132,7 +200,7 @@ namespace PdfLib
             {
                 foreach (var row in secondTableData)
                 {
-                    Console.WriteLine(string.Join("|", row));
+                    Debug.WriteLine(string.Join("|", row));
                 }
             }
 
@@ -188,7 +256,7 @@ namespace PdfLib
                 .FindIndex(row => row.Any(cell => cell.Contains("건강보험료")));
 
             decimal healthInsurance = healthInsuranceIndex < 0 ? 0 : secondTableData[healthInsuranceIndex]
-                .SkipWhile(cell => cell != "대상금액")
+                .SkipWhile(cell => !cell.Contains("대상금액"))
                 .Skip(1)
                 .Select(cell => decimal.TryParse(cell.Trim(), out decimal value) ? value : 0)
                 .FirstOrDefault();
@@ -207,18 +275,18 @@ namespace PdfLib
 
             if (isDebug)
             {
-                Console.WriteLine("------------");
-                Console.WriteLine($"nationalPension: {nationalPension}");
-                Console.WriteLine($"publicOfficialPension: {publicOfficialPension}");
-                Console.WriteLine($"soldierPension: {soldierPension}");
-                Console.WriteLine($"privateSchoolPension: {privateSchoolPension}");
-                Console.WriteLine($"postalPension: {postalPension}");
-                Console.WriteLine($"healthInsurance: {healthInsurance}");
-                Console.WriteLine($"employmentInsurance: {employmentInsurance}");
-                Console.WriteLine($"preCalculatedSalary: {preCalculatedSalary}");
+                Debug.WriteLine("------------");
+                Debug.WriteLine($"nationalPension: {nationalPension}");
+                Debug.WriteLine($"publicOfficialPension: {publicOfficialPension}");
+                Debug.WriteLine($"soldierPension: {soldierPension}");
+                Debug.WriteLine($"privateSchoolPension: {privateSchoolPension}");
+                Debug.WriteLine($"postalPension: {postalPension}");
+                Debug.WriteLine($"healthInsurance: {healthInsurance}");
+                Debug.WriteLine($"employmentInsurance: {employmentInsurance}");
+                Debug.WriteLine($"preCalculatedSalary: {preCalculatedSalary}");
             }
 
-            return new PdfEmployeeData(name, uid, baseYear, preCalculatedSalary, deductibleTax);
+            return new PdfEmployeeData(name, uidnum7, baseYear, preCalculatedSalary, deductibleTax);
         }
     }
 
