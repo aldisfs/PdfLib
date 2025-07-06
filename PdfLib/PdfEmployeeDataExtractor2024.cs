@@ -48,24 +48,42 @@ namespace PdfLib
             string uidnum7 = "";
             int baseYear = 0;
 
+            //var userInfoRow = firstTableData
+            //    .FirstOrDefault(r => r.Any(cell => cell.Contains("⑥")) && r.Any(cell => cell.Contains("⑦")));
             var userInfoRow = firstTableData
-                .FirstOrDefault(r => r.Any(cell => cell.Contains("⑥")) && r.Any(cell => cell.Contains("⑦")));
+                .FirstOrDefault(r =>
+                    (r.Any(cell => cell.Contains("⑥")) || r.Any(cell => cell.Contains("(6)"))) &&
+                    (r.Any(cell => cell.Contains("⑦")) || r.Any(cell => cell.Contains("(7)")))
+                );
 
 
             //상황에 따라 cell이 다를 수 있으므로 row문자열을 모두 합친 후 문자열로 처리를 한다 (필수 데이터만 이런 처리를 함)
             if (userInfoRow != null)
             {
-                int startIndex = userInfoRow.FindIndex(cell => cell.Contains("⑥"));
-                int endIndex = userInfoRow.FindIndex(cell => cell.Contains("⑦"));
+                //int startIndex = userInfoRow.FindIndex(cell => cell.Contains("⑥"));
+                //int endIndex = userInfoRow.FindIndex(cell => cell.Contains("⑦"));
+                int startIndex = userInfoRow.FindIndex(cell => cell.Contains("⑥") || cell.Contains("(6)"));
+                int endIndex = userInfoRow.FindIndex(cell => cell.Contains("⑦") || cell.Contains("(7)"));
+
 
                 //성명
                 if (startIndex >= 0 && endIndex > startIndex)
                 {
-                    // ⑥ 포함 셀부터 ⑦ 포함 셀 이전까지
+                    // ⑥/(6) 포함 셀부터 ⑦/(7) 포함 셀 이전까지
                     var cellsToJoin = userInfoRow.Skip(startIndex).Take(endIndex - startIndex);
                     string concated = string.Concat(cellsToJoin);
-                    string keyword = "⑥성명";
-                    int idx = concated.IndexOf(keyword);
+                    string[] keywords = { "⑥성명", "(6)성명" };
+                    int idx = -1;
+                    string keyword = "";
+                    foreach (var k in keywords)
+                    {
+                        idx = concated.IndexOf(k);
+                        if (idx >= 0)
+                        {
+                            keyword = k;
+                            break;
+                        }
+                    }
                     if (idx >= 0)
                     {
                         // "성명"의 끝 위치부터 끝까지 가져오기
